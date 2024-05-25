@@ -1,65 +1,48 @@
 #include <ros/ros.h>
-#include <geometry_msgs/PoseStamped.h>
+#include <sensor_msgs/Imu.h>
 #include <geometry_msgs/Vector3.h>
-#include <tf/tf.h>
+#include <tf/transform_datatypes.h>
+#include <math.h>
 
-class PoseToAnglesConverter
-{
-public:
-    PoseToAnglesConverter()
-    {
-        
-        pose_sub_ = nh_.subscribe("slam_out_pose", 10, &PoseToAnglesConverter::poseCallback, this);
+ros::Publisher imu_pub;
 
-        
-        angles_pub_ = nh_.advertise<geometry_msgs::Vector3>("angles", 10);
-    }
+double normalize_angle(double angle) {
+    return fmod(angle + 360.0, 360.0);
+}
 
-private:
-    void poseCallback(const geometry_msgs::PoseStamped::ConstPtr& msg)
-    {
-        
-        tf::Quaternion q(
-            msg->pose.orientation.x,
-            msg->pose.orientation.y,
-            msg->pose.orientation.z,
-            msg->pose.orientation.w
-        );
-        
-        double roll, pitch, yaw;
-        tf::Matrix3x3(q).getRPY(roll, pitch, yaw);
+void imuCallback(const sensor_msgs::Imu::ConstPtr& msg) {
+    tf::Quaternion q(
+        msg->orientation.x,
+        msg->orientation.y,
+        msg->orientation.z,
+        msg->orientation.w
+    );
+    
+    tf::Matrix3x3 m(q);
+    double roll, pitch, yaw;
+    m.getRPY(roll, pitch, yaw);
 
-        
-        float roll_deg = normalizeAngle(roll * 180.0 / M_PI);
-        float pitch_deg = normalizeAngle(pitch * 180.0 / M_PI);
-        float yaw_deg = normalizeAngle(yaw * 180.0 / M_PI);
+    double roll_deg = normalize_angle(roll * 180.0 / M_PI);
+    double pitch_deg = normalize_angle(pitch * 180.0 / M_PI);
+    double yaw_deg = normalize_angle(yaw * 180.0 / M_PI);
 
-        
-        geometry_msgs::Vector3 angles_msg;
-        angles_msg.x = roll_deg;
-        angles_msg.y = pitch_deg;
-        angles_msg.z = yaw_deg;
-        angles_pub_.publish(angles_msg);
-    }
+    ROS_INFO("Roll: %f degrees, Pitch: %f degrees, Yaw: %f degrees", roll_deg, pitch_deg, yaw_deg);
 
-    float normalizeAngle(float angle)
-    {
-        if (angle < 0) {
-            angle += 360.0;
-        }
-        return fmod(angle, 360.0);
-    }
+    geometry_msgs::Vector3 imu_msg;
+    imu_msg.x = roll_deg;
+    imu_msg.y = pitch_deg;
+    imu_msg.z = yaw_deg;
 
-    ros::NodeHandle nh_;
-    ros::Subscriber pose_sub_;
-    ros::Publisher angles_pub_;
-};
+    imu_pub.publish(imu_msg);
+}
 
-int main(int argc, char** argv)
-{
+int main(int argc, char** argv) {
     ros::init(argc, argv, "pose_to_yaw_node");
+    ros::NodeHandle nh;
 
-    PoseToAnglesConverter converter;
+    ros::Subscriber sub = nh.subscribe("/zed2/zed_node/imu/data", 1000, imuCallback);
+
+    imu_pub = nh.advertise<geometry_msgs::Vector3>("/imu/angles", 1000);
 
     ros::spin();
 
